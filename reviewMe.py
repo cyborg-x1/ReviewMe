@@ -262,7 +262,7 @@ class ListPulls(QWidget):
         self.qtreePUIS.clear()          
         pass
         
-    def addNotification(self, org, repo, issuePullError, data):
+    def addNotification(self, org, repo, etype, data):
         if(self.orgEntry==None):
             self.orgEntry=QTreeWidgetItem(self.qtreePUIS)
             self.orgEntry.setText(0, org)
@@ -274,21 +274,42 @@ class ListPulls(QWidget):
         
         
 
-        if(issuePullError==1):
+        if(etype==1):  #Pullrequest
             treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "Pull {}".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) ) 
             pass
-        elif(issuePullError==2):
+        elif(etype==11):  #Pullrequest review
+            treeItem=QTreeWidgetItem(self.repoEntry)
+            treeItem.setText(0, "Pull {} REVIEW".format(data['number']) )
+            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+            pass   
+        elif(etype==12):  #Pullrequest review
+            treeItem=QTreeWidgetItem(self.repoEntry)
+            treeItem.setText(0, "Pull {} MERGE/CHANGES?".format(data['number']) )
+            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+            pass        
+#         elif(etype==13):  #Pullrequest changes
+#             treeItem=QTreeWidgetItem(self.repoEntry)
+#             treeItem.setText(0, "Pull {} CHANGES".format(data['number']) )
+#             treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+#             pass            
+        
+        elif(etype==2): #Issue
             treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "Issue {}".format(data['number']) )
             treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/issues/"+str(data['number']) ) 
             pass
-        else: #0
+        
+        elif(etype==0): #0
             treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "NO CONNECTION!" )  
             pass
         
+        else: #0
+            treeItem=QTreeWidgetItem(self.repoEntry)
+            treeItem.setText(0, "???ERROR??? {}".format(etype) )  
+            pass
                 
     def itemHandler(self, item, column_no):
         print(item.text(1))
@@ -360,8 +381,6 @@ class ListPulls(QWidget):
                         issue['grabbed_comments']=yaml.load(requests.get(issue['comments_url'],auth=self.auth).content)
                         #Filter all issues which do not contain the current username
                         dumpedissue=yaml.dump(issue)
-                        print(dumpedissue)
-                        
                         result = re.search(self.usernamePattern, dumpedissue)
                         print(result)
                         
@@ -376,8 +395,27 @@ class ListPulls(QWidget):
                     #Filter all pullrequests which do not contain the username at all
                     dumpedpull=yaml.dump(pull)
                     result = re.search(self.usernamePattern, dumpedpull)
-                    if(result != None):
-                        self.addNotification(org, repo, 1, pull)               
+                    print(dumpedpull)
+                    
+                    reviewStatus=0
+                    #Pull does belong to the user and no reviewers are there ... reviewing done?
+                    if(pull['user']['login']==self.settings["username"] and pull['requested_reviewers']==[]):
+                        reviewStatus=12
+                    else:
+                        ##Check for pending review request
+                        for reviewer in pull['requested_reviewers']:
+                            if(reviewer['login']==self.settings["username"]):
+                                reviewStatus=11
+                                print("REVIEW!")
+                                break
+                            
+                    if(result != None or reviewStatus>0):
+                        t=1
+                        if(reviewStatus>0):
+                            t=reviewStatus
+                            
+                        self.addNotification(org, repo, t, pull)
+                                                            
   
                 pass  
                 
