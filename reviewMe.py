@@ -166,14 +166,19 @@ class Startup(QDialog):
     
 
 class ListPulls(QWidget):
-    settings=None
-    auth=None
-    usernamePattern=None
+    data=None #data yaml
+    settings=None #settings yaml
+    auth=None #auth information for requests
+    usernamePattern=None #Pattern for username regex 
     settings_dir=expanduser("~/.reviewMe")
     settings_path= expanduser("~/.reviewMe/settings.yaml")
-    qtreePUIS=None
-    orgEntry=None
-    repoEntry=None
+    qtreePUIS=None #Tree for notifications
+    orgEntry=None #Current org entry in tree
+    repoEntry=None #Current repo entry in tree
+    org=None #Current org
+    repo=None #Current repo
+    ackClicks=0 #Current clicks on ack for the current entry
+    qbtnAck=None #Acknowledge button
     
     def checkWorkingTime(self):
         hours=self.settings['working_hours']
@@ -256,87 +261,112 @@ class ListPulls(QWidget):
         self.startup()
         self.initUI()
         
-
+    def getDateTimeFromGithubStamp(self,date):
+        return datetime.datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
+    
+    def GithubStampToDateTime(self, time):
+        return time.strftime('%Y-%m-%dT%H:%M:%SZ')
+    
+    def setIssueNotifyTime(self,githubtime):
+        self.data[self.org][self.repo]=githubtime
     
     def initResetTreeWidget(self):
         self.qtreePUIS.clear()          
         pass
         
-    def addNotification(self, org, repo, etype, data):
+    def addNotification(self, etype, data):
         if(self.orgEntry==None):
             self.orgEntry=QTreeWidgetItem(self.qtreePUIS)
-            self.orgEntry.setText(0, org)
+            self.orgEntry.setText(0, self.org)
             self.orgEntry.setExpanded(True)
         if(self.repoEntry==None):
             self.repoEntry=QTreeWidgetItem(self.orgEntry)
-            self.repoEntry.setText(0, repo)
+            self.repoEntry.setText(0, self.repo)
             self.repoEntry.setExpanded(True)
         
+        treeItem=QTreeWidgetItem(self.repoEntry)
         
-
+        #set update time
+        if('updated_at' in data):
+            treeItem.setText(2, data['updated_at'])
+            
         if(etype==1):  #Pullrequest
-            treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "Pull {}".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) ) 
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
             pass
         elif(etype==11):  #Pullrequest review
-            treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "Pull {} REVIEW".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
             pass   
         elif(etype==12):  #Pullrequest review
-            treeItem=QTreeWidgetItem(self.repoEntry)
-            treeItem.setText(0, "Pull {} MERGE/CHANGES?".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+            treeItem.setText(0, "Pull {} CHANGES_REQUESTED".format(data['number']) )
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
             pass        
 #         elif(etype==13):  #Pullrequest changes
 #             treeItem=QTreeWidgetItem(self.repoEntry)
 #             treeItem.setText(0, "Pull {} CHANGES".format(data['number']) )
-#             treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/pull/"+str(data['number']) )            
+#             treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )            
 #             pass            
         
         elif(etype==2): #Issue
-            treeItem=QTreeWidgetItem(self.repoEntry)
             treeItem.setText(0, "Issue {}".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+org+"/"+repo+"/issues/"+str(data['number']) ) 
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/issues/"+str(data['number']) )
             pass
         
         elif(etype==0): #0
-            treeItem=QTreeWidgetItem(self.repoEntry)
-            treeItem.setText(0, "NO CONNECTION!" )  
+            treeItem.setText(0, "NO CONNECTION!" )
             pass
         
         else: #0
-            treeItem=QTreeWidgetItem(self.repoEntry)
-            treeItem.setText(0, "???ERROR??? {}".format(etype) )  
+            treeItem.setText(0, "???ERROR??? {}".format(etype) )
             pass
+        
+        
                 
-    def itemHandler(self, item, column_no):
+    def itemDoubleClickedHandler(self, item, column_no):
         print(item.text(1))
         
-        if(item.text(1)!=None):
+        if(item.text(1)!=""):
             call(["firefox", item.text(1)])
-        pass
+            
 
+    def itemSelectionChangedHandler(self):
+        self.ackClicks=0
+        self.qbtnAck.setEnabled(self.qtreePUIS.currentItem().text(2)!="")
+        print(self.qtreePUIS.currentItem().text(0))
+        print(self.qtreePUIS.currentItem().text(2))
+        
             
     def initUI(self):               
-        self.setGeometry(300, 1200, 250, 150)
+        self.setGeometry(300, 1200, 400, 500)
         self.setWindowTitle('Pullrequests')    
 
         qlay=QVBoxLayout(self)
         
         self.qtreePUIS=QTreeWidget()
-        self.qtreePUIS.itemDoubleClicked.connect(self.itemHandler)
+        self.qtreePUIS.itemDoubleClicked.connect(self.itemDoubleClickedHandler)
+        self.qtreePUIS.itemSelectionChanged.connect(self.itemSelectionChangedHandler)
         self.qtreePUIS.setHeaderLabel("Pulls/Issues")
         self.initResetTreeWidget()
 
+        self.qbtnAck = QPushButton('Ack', self)
         qbtnQuit = QPushButton('Quit', self)
         qlay.addWidget(self.qtreePUIS)
+        qlay.addWidget(self.qbtnAck)
         qlay.addWidget(qbtnQuit)
         qbtnQuit.clicked.connect(QCoreApplication.instance().quit)
+        self.qbtnAck.clicked.connect(self.ackClicked)
+
         self.update()
         self.show()
         
+    def ackClicked(self):
+        self.ackClicks+=1
+        if(self.ackClicks==2):
+            print("ACK")
+            self.ackClicks=0
+        pass    
+    
     def update(self):
         #self.auth=None
         self.checkWorkingTime()
@@ -351,19 +381,19 @@ class ListPulls(QWidget):
         
         print(r.content)
            
-        for org in self.settings['repos']:
+        for self.org in self.settings['repos']:
             self.orgEntry=None
                         
-            for repo in self.settings['repos'][org]:
+            for self.repo in self.settings['repos'][self.org]:
                 self.repoEntry=None
                 
-                print(repo)
-                p = requests.get("https://api.github.com/repos/"+org+"/"+repo+"/pulls?state=open", auth=self.auth)
-                i = requests.get("https://api.github.com/repos/"+org+"/"+repo+"/issues?state=open",auth=self.auth)
+                print(self.repo)
+                p = requests.get("https://api.github.com/repos/"+self.org+"/"+self.repo+"/pulls?state=open", auth=self.auth)
+                i = requests.get("https://api.github.com/repos/"+self.org+"/"+self.repo+"/issues?state=open",auth=self.auth)
                 
                 
                 if(p.status_code != 200 or i.status_code != 200):
-                    self.addNotification(org, repo, 0, None)
+                    self.addNotification(0, None)
                     print("NO CONNECTION!")
                     print(i.status_code)
                     print(i.content)
@@ -385,13 +415,15 @@ class ListPulls(QWidget):
                         print(result)
                         
                         if(result != None):
-                            self.addNotification(org, repo, 2, issue)
+                            self.addNotification(2, issue)
                 
                 for pull in pulls:
                     #Download all rev comments and comments and add to the yaml
                     pull['grabbed_comments']=yaml.load(requests.get(pull['_links']['comments']['href'],auth=self.auth).content)
                     pull['grabbed_rev_comments']=yaml.load(requests.get(pull['_links']['review_comments']['href'],auth=self.auth).content)
-    
+                    pull['reviews']=yaml.load(requests.get("https://api.github.com/repos/"+self.org+"/"+self.repo+"/pulls/"+str(pull['number'])+"/reviews",auth=self.auth).content)
+                    
+                    
                     #Filter all pullrequests which do not contain the username at all
                     dumpedpull=yaml.dump(pull)
                     result = re.search(self.usernamePattern, dumpedpull)
@@ -399,8 +431,26 @@ class ListPulls(QWidget):
                     
                     reviewStatus=0
                     #Pull does belong to the user and no reviewers are there ... reviewing done?
-                    if(pull['user']['login']==self.settings["username"] and pull['requested_reviewers']==[]):
-                        reviewStatus=12
+                    if(pull['user']['login']==self.settings["username"] and pull['reviews']!=[]):
+                        
+                        #Check reviews
+                        for review in pull['reviews']:
+                            if(review['state']=="CHANGES_REQUESTED"):
+                                
+                                #Check if reviewer is already called in again...
+                                rereview=False
+                                for reviewer in pull['requested_reviewers']:
+                                    if(reviewer['login']==review["user"]["login"]):
+                                        rereview=True
+                                        break
+                                
+                                if(not rereview):
+                                    reviewStatus=12
+                                
+                                break
+                            
+                        
+                        
                     else:
                         ##Check for pending review request
                         for reviewer in pull['requested_reviewers']:
@@ -414,7 +464,7 @@ class ListPulls(QWidget):
                         if(reviewStatus>0):
                             t=reviewStatus
                             
-                        self.addNotification(org, repo, t, pull)
+                        self.addNotification(t, pull)
                                                             
   
                 pass  
