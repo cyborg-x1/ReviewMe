@@ -18,6 +18,7 @@ import sys
 from PyQt5.QtWidgets import QWidget, QPushButton, QApplication
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QLineEdit,QVBoxLayout, QMessageBox,QLabel,QDialog,QCalendarWidget,QTreeWidget,QTreeWidgetItem
+from PyQt5.QtGui import QBrush, QColor
 from os.path import expanduser
 from os import stat,mkdir
 import requests
@@ -26,6 +27,7 @@ import re
 import datetime
 import PyQt5
 from subprocess import call
+from idlelib.TreeWidget import TreeItem
 
 
 
@@ -350,25 +352,56 @@ class ListPulls(QWidget):
         self.initResetTreeWidget()
 
         self.qbtnAck = QPushButton('Ack', self)
+        self.qbtnAck.clicked.connect(self.ackClicked)
+        self.qbtnAck.setEnabled(False)
+        
         qbtnQuit = QPushButton('Quit', self)
         qlay.addWidget(self.qtreePUIS)
         qlay.addWidget(self.qbtnAck)
         qlay.addWidget(qbtnQuit)
         qbtnQuit.clicked.connect(QCoreApplication.instance().quit)
-        self.qbtnAck.clicked.connect(self.ackClicked)
 
         self.update()
         self.show()
         
     def ackClicked(self):
         self.ackClicks+=1
+        
+        
         if(self.ackClicks==2):
             print("ACK")
             self.ackClicks=0
-        pass    
+            self.qbtnAck.setEnabled(False)
+        else:
+            self.clearTreeBackgrounds()
+            self.qtreePUIS.currentItem().setBackground(0,QBrush(QColor(0,255,0)) )
+            pass
+            
+    
+    def dateCheck(self,treeItem,time=None):
+        if(treeItem.text(2)!=""): #Check if there is a time for this entry
+            if(time==None):#Check if we have a time no time yet
+                time=self.getDateTimeFromGithubStamp(treeItem.text(2))#get the time of the current one cause its the start
+            else:#We have a time so we are in a parent of the selection
+                for c in range(treeItem.childCount()): #lets check the other children
+                    child=treeItem.child(c)#get it
+                    timeChild=self.getDateTimeFromGithubStamp(child.text(2))#get childs time
+                    if(timeChild<=time):#check if childs time is smaller or equal
+                        self.setTreeChildrenBackground(child,QColor(0,255,0)) #mark it with all its children
+        else:
+            return #leave if no time entry
+        self.dateCheck(treeItem.parent, time)   
+                
+    
+    def setTreeChildrenBackground(self,treeItem,color=QColor(255,255,255)):
+        treeItem.setBackground(0,QBrush(color) )
+        for c in range(treeItem.childCount()):
+            self.setTreeChildrenBackground(treeItem.child(c))
+        
+    def clearTreeBackgrounds(self):
+        self.setTreeChildrenBackground(self.qtreePUIS.invisibleRootItem())
     
     def update(self):
-        #self.auth=None
         self.checkWorkingTime()
         self.initResetTreeWidget()
 
