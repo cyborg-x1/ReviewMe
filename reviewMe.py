@@ -226,7 +226,7 @@ class ListPulls(QWidget):
             pass
         
         if(doQuit):
-            #exit(0)
+            exit(0)
             pass
         
     
