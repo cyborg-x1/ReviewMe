@@ -17,7 +17,7 @@ import yaml
 import sys
 from PyQt5.QtWidgets import QWidget, QPushButton, QApplication
 from PyQt5.QtCore import *
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer,Qt, QCoreApplication
 from PyQt5.QtWidgets import QLineEdit,QVBoxLayout, QMessageBox,QLabel,QDialog,QCalendarWidget,QTreeWidget,QTreeWidgetItem
 from PyQt5.QtGui import QBrush, QColor
 from os.path import expanduser
@@ -110,7 +110,6 @@ class Startup(QDialog):
         qbtnLogin = QPushButton('Login')
         qbtnVacation = QPushButton('Vacation')
         qbtnAbort = QPushButton('Abort')
-        qTimer = QTimer()
         
         qlay.addWidget(qlabelName)
         qlay.addWidget(self.username)
@@ -171,12 +170,14 @@ class Startup(QDialog):
 
 class ListPulls(QWidget):
     data=None #data yaml
+    updateRate=None
     settings=None #settings yaml
     auth=None #auth information for requests
     usernamePattern=None #Pattern for username regex 
     settings_dir=expanduser("~/.reviewMe")
     settings_path= expanduser("~/.reviewMe/settings.yaml")
     data_path= expanduser("~/.reviewMe/data.yaml")
+    qTimer = None
     
     qtreePUIS=None #Tree for notifications
     orgEntry=None #Current org entry in tree
@@ -261,6 +262,12 @@ class ListPulls(QWidget):
         UN=self.settings["username"]
         self.usernamePattern = re.compile("[^/]"+UN+"[^/]")
         self.readDates()
+        self.updateRate=self.settings['update_rate']*60*1000 #In minutes
+        
+        self.qTimer = QTimer()
+        self.qTimer.timeout.connect(self.doUpdate)
+        self.qTimer.start(self.updateRate)
+        
         
     def __init__(self):
         super().__init__()
@@ -472,9 +479,10 @@ class ListPulls(QWidget):
     def clearTreeBackgrounds(self):
         self.setTreeChildrenBackground(self.qtreePUIS.invisibleRootItem())
     
+    
     def doUpdate(self):
+        self.qTimer.stop()
         self.setEnabled(False)
-        self.update()
         self.checkWorkingTime()
         self.initResetTreeWidget()
 
@@ -571,7 +579,8 @@ class ListPulls(QWidget):
   
                 
         self.setEnabled(True)
-                
+        self.qTimer.start(self.updateRate)
+        self.activateWindow()
                 
                 
 
