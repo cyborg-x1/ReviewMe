@@ -17,6 +17,7 @@ import yaml
 import sys
 from PyQt5.QtWidgets import QWidget, QPushButton, QApplication
 from PyQt5.QtCore import *
+from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QLineEdit,QVBoxLayout, QMessageBox,QLabel,QDialog,QCalendarWidget,QTreeWidget,QTreeWidgetItem
 from PyQt5.QtGui import QBrush, QColor
 from os.path import expanduser
@@ -109,6 +110,7 @@ class Startup(QDialog):
         qbtnLogin = QPushButton('Login')
         qbtnVacation = QPushButton('Vacation')
         qbtnAbort = QPushButton('Abort')
+        qTimer = QTimer()
         
         qlay.addWidget(qlabelName)
         qlay.addWidget(self.username)
@@ -174,6 +176,8 @@ class ListPulls(QWidget):
     usernamePattern=None #Pattern for username regex 
     settings_dir=expanduser("~/.reviewMe")
     settings_path= expanduser("~/.reviewMe/settings.yaml")
+    data_path= expanduser("~/.reviewMe/data.yaml")
+    
     qtreePUIS=None #Tree for notifications
     orgEntry=None #Current org entry in tree
     repoEntry=None #Current repo entry in tree
@@ -181,6 +185,7 @@ class ListPulls(QWidget):
     repo=None #Current repo
     ackClicks=0 #Current clicks on ack for the current entry
     qbtnAck=None #Acknowledge button
+    
     
     def checkWorkingTime(self):
         hours=self.settings['working_hours']
@@ -230,7 +235,6 @@ class ListPulls(QWidget):
         
         with open(self.settings_path,"r") as settings_file:
             self.settings=yaml.load(settings_file.read())
-            print(self.settings)
         
         self.checkWorkingTime()
         
@@ -256,7 +260,7 @@ class ListPulls(QWidget):
             pass
         UN=self.settings["username"]
         self.usernamePattern = re.compile("[^/]"+UN+"[^/]")
-        
+        self.readDates()
         
     def __init__(self):
         super().__init__()
@@ -276,7 +280,7 @@ class ListPulls(QWidget):
         self.qtreePUIS.clear()          
         pass
         
-    def addNotification(self, etype, data):
+    def addNotification(self, etype, entry):
         if(self.orgEntry==None):
             self.orgEntry=QTreeWidgetItem(self.qtreePUIS)
             self.orgEntry.setText(0, self.org)
@@ -286,33 +290,50 @@ class ListPulls(QWidget):
             self.repoEntry.setText(0, self.repo)
             self.repoEntry.setExpanded(True)
         
+
         treeItem=QTreeWidgetItem(self.repoEntry)
         
+        mute=False
         #set update time
-        if('updated_at' in data):
-            treeItem.setText(2, data['updated_at'])
+        if('updated_at' in entry):
+            treeItem.setText(2, entry['updated_at'])
+            if(self.data != None):
+                if(self.org in self.data):
+                    if(self.repo in self.data[self.org]):
+                        if (entry['number'] in self.data[self.org][self.repo]):
+                            print(self.data[self.org][self.repo][entry['number']])
+                            stamp_saved=self.data[self.org][self.repo][entry['number']]
+                            stamp_current=self.getDateTimeFromGithubStamp(entry['updated_at'])
+                            if(stamp_current<=stamp_saved):
+                                mute=True
+        
+
+        setattr(treeItem, 'id', entry['number'])
             
+        
         if(etype==1):  #Pullrequest
-            treeItem.setText(0, "Pull {}".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
+            treeItem.setText(0, "P{}".format(entry['number']) )
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(entry['number']) )
             pass
         elif(etype==11):  #Pullrequest review
-            treeItem.setText(0, "Pull {} REVIEW".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
+            treeItem.setText(0, "P{} REVIEW".format(entry['number']) )
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(entry['number']) )
+            mute=False
             pass   
         elif(etype==12):  #Pullrequest review
-            treeItem.setText(0, "Pull {} CHANGES_REQUESTED".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )
+            treeItem.setText(0, "P{} CHANGES_REQUESTED".format(entry['number']) )
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(entry['number']) )
+            mute=False
             pass        
 #         elif(etype==13):  #Pullrequest changes
 #             treeItem=QTreeWidgetItem(self.repoEntry)
-#             treeItem.setText(0, "Pull {} CHANGES".format(data['number']) )
-#             treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(data['number']) )            
+#             treeItem.setText(0, "Pull {} CHANGES".format(entry['number']) )
+#             treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/pull/"+str(entry['number']) )            
 #             pass            
         
         elif(etype==2): #Issue
-            treeItem.setText(0, "Issue {}".format(data['number']) )
-            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/issues/"+str(data['number']) )
+            treeItem.setText(0, "I{}".format(entry['number']) )
+            treeItem.setText(1, "https://github.com/"+self.org+"/"+self.repo+"/issues/"+str(entry['number']) )
             pass
         
         elif(etype==0): #0
@@ -323,10 +344,28 @@ class ListPulls(QWidget):
             treeItem.setText(0, "???ERROR??? {}".format(etype) )
             pass
         
+        if(mute):
+            print("MUTED "+self.org+" "+self.repo+" "+str(entry['number']))
+            self.repoEntry.removeChild(treeItem)
+            
         
+    
+    def readDates(self):
+        try:
+            stat(self.data_path)
+            with open(self.data_path,"r") as data_file:
+                self.data=yaml.load(data_file.read())
+        except:
+            self.data=yaml.load("{}")
+            
+        
+
+    def writeDates(self):
+        with open(self.data_path,"w") as data_file:
+            yaml.dump(self.data, data_file)
+
                 
     def itemDoubleClickedHandler(self, item, column_no):
-        print(item.text(1))
         
         if(item.text(1)!=""):
             call(["firefox", item.text(1)])
@@ -335,13 +374,11 @@ class ListPulls(QWidget):
     def itemSelectionChangedHandler(self):
         self.ackClicks=0
         self.qbtnAck.setEnabled(self.qtreePUIS.currentItem().text(2)!="")
-        print(self.qtreePUIS.currentItem().text(0))
-        print(self.qtreePUIS.currentItem().text(2))
         
             
     def initUI(self):               
         self.setGeometry(300, 1200, 400, 500)
-        self.setWindowTitle('Pullrequests')    
+        self.setWindowTitle('Pullrequests and Issues')    
 
         qlay=QVBoxLayout(self)
         
@@ -356,12 +393,17 @@ class ListPulls(QWidget):
         self.qbtnAck.setEnabled(False)
         
         qbtnQuit = QPushButton('Quit', self)
+        qbtnUpdate = QPushButton('Update', self)
+        
         qlay.addWidget(self.qtreePUIS)
         qlay.addWidget(self.qbtnAck)
+        qlay.addWidget(qbtnUpdate)
         qlay.addWidget(qbtnQuit)
+        
         qbtnQuit.clicked.connect(QCoreApplication.instance().quit)
+        qbtnUpdate.clicked.connect(self.doUpdate)
 
-        self.update()
+        self.doUpdate()
         self.show()
         
     def ackClicked(self):
@@ -369,9 +411,38 @@ class ListPulls(QWidget):
         
         
         if(self.ackClicks==2):
-            print("ACK")
             self.ackClicks=0
             self.qbtnAck.setEnabled(False)
+            self.clearTreeBackgrounds()
+            item=self.qtreePUIS.currentItem()
+
+            #Go up if we do not have an id
+            while(item.id==None):
+                item=item.parent
+                if(item==None):
+                    print("No parent this should not have happened!")
+                    return;
+            
+            ident=item.id
+            time=self.getDateTimeFromGithubStamp(item.text(2))
+            repo=item.parent()
+            org=repo.parent()
+            
+            if(self.data==None):
+                self.data=yaml.load("{}")
+            
+            if(org.text(0) not in self.data):
+                self.data[org.text(0)]={}
+                
+            if(repo.text(0) not in self.data[org.text(0)]):
+                self.data[org.text(0)][repo.text(0)]={}
+            
+                        
+            self.data[org.text(0)][repo.text(0)][ident]=time
+            self.writeDates()
+            
+            #Remove item
+            item.removeChild(item)
         else:
             self.clearTreeBackgrounds()
             self.qtreePUIS.currentItem().setBackground(0,QBrush(QColor(0,255,0)) )
@@ -401,7 +472,9 @@ class ListPulls(QWidget):
     def clearTreeBackgrounds(self):
         self.setTreeChildrenBackground(self.qtreePUIS.invisibleRootItem())
     
-    def update(self):
+    def doUpdate(self):
+        self.setEnabled(False)
+        self.update()
         self.checkWorkingTime()
         self.initResetTreeWidget()
 
@@ -412,7 +485,6 @@ class ListPulls(QWidget):
             treeItem.setText(0, "NO CONNECTION!" )
             return
         
-        print(r.content)
            
         for self.org in self.settings['repos']:
             self.orgEntry=None
@@ -420,7 +492,6 @@ class ListPulls(QWidget):
             for self.repo in self.settings['repos'][self.org]:
                 self.repoEntry=None
                 
-                print(self.repo)
                 p = requests.get("https://api.github.com/repos/"+self.org+"/"+self.repo+"/pulls?state=open", auth=self.auth)
                 i = requests.get("https://api.github.com/repos/"+self.org+"/"+self.repo+"/issues?state=open",auth=self.auth)
                 
@@ -445,7 +516,6 @@ class ListPulls(QWidget):
                         #Filter all issues which do not contain the current username
                         dumpedissue=yaml.dump(issue)
                         result = re.search(self.usernamePattern, dumpedissue)
-                        print(result)
                         
                         if(result != None):
                             self.addNotification(2, issue)
@@ -460,7 +530,6 @@ class ListPulls(QWidget):
                     #Filter all pullrequests which do not contain the username at all
                     dumpedpull=yaml.dump(pull)
                     result = re.search(self.usernamePattern, dumpedpull)
-                    print(dumpedpull)
                     
                     reviewStatus=0
                     #Pull does belong to the user and no reviewers are there ... reviewing done?
@@ -500,7 +569,8 @@ class ListPulls(QWidget):
                         self.addNotification(t, pull)
                                                             
   
-                pass  
+                
+        self.setEnabled(True)
                 
                 
                 
