@@ -30,9 +30,24 @@ import PyQt5
 from subprocess import call
 from idlelib.TreeWidget import TreeItem
 
+import socket
+import sys
+import time
 
+def get_lock(process_name):
+    # Without holding a reference to our socket somewhere it gets garbage
+    # collected when the function exits
+    get_lock._lock_socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+
+    try:
+        get_lock._lock_socket.bind('\0' + process_name)
+        print('I got the lock')
+    except socket.error:
+        print('lock exists')
+        sys.exit()
 
         
+
 
 
 class VacationEndSelector(QDialog):
@@ -580,12 +595,14 @@ class ListPulls(QWidget):
                 
         self.setEnabled(True)
         self.qTimer.start(self.updateRate)
+        self.show()
         self.activateWindow()
                 
                 
 
         
-if __name__ == '__main__':    
+if __name__ == '__main__':
+    get_lock('ReviewMe')
     app = QApplication(sys.argv)
     w = ListPulls()
     w.show()
